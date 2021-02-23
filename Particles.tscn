@@ -1,0 +1,115 @@
+[gd_scene load_steps=8 format=2]
+
+[sub_resource type="Shader" id=1]
+code = "shader_type particles;
+
+uniform float angular_spacing = 0.5;
+uniform float outward_amt = 3;
+uniform float min_cloud_size = 0.03;
+uniform float max_cloud_size = 1.0;
+
+float rand_from_seed(in uint seed) {
+  int k;
+  int s = int(seed);
+  if (s == 0)
+    s = 305420679;
+  k = s / 127773;
+  s = 16807 * (s - k * 127773) - 2836 * k;
+  if (s < 0)
+    s += 2147483647;
+  seed = uint(s);
+  return float(seed % uint(65536)) / 65535.0;
+}
+
+uint hash(uint x) {
+  x = ((x >> uint(16)) ^ x) * uint(73244475);
+  x = ((x >> uint(16)) ^ x) * uint(73244475);
+  x = (x >> uint(16)) ^ x;
+  return x;
+}
+
+void vertex(){
+	if (RESTART){
+		//create some random seeds
+		uint alt_seed_1 = hash(uint(INDEX) + uint(1) + RANDOM_SEED);
+		uint alt_seed_2 = hash(uint(INDEX) + uint(27) + RANDOM_SEED);
+		uint alt_seed_3 = hash(uint(INDEX) + uint(43) + RANDOM_SEED);
+		
+		//position clouds in spiral
+		float pt_index = float(INDEX) + rand_from_seed(alt_seed_1);
+		pt_index = sqrt(pt_index);
+		
+		float x = outward_amt*pt_index*cos(angular_spacing*pt_index + 3.142 * float(sign(INDEX%2-1)));
+		float y = rand_from_seed(alt_seed_2);
+		float z = outward_amt*pt_index*sin(angular_spacing*pt_index + 3.142 * float(sign(INDEX%2-1)));
+		
+		TRANSFORM[3].xyz = vec3(x,y,z);
+		
+		float scale = mix(min_cloud_size,max_cloud_size,1.0-pow(rand_from_seed(alt_seed_3),2));
+		
+		TRANSFORM[0].x *= scale;
+		TRANSFORM[1].y *= scale;
+		TRANSFORM[2].z *= scale;
+		
+	}
+}"
+
+[sub_resource type="ShaderMaterial" id=2]
+shader = SubResource( 1 )
+shader_param/angular_spacing = 0.5
+shader_param/outward_amt = 3.0
+shader_param/min_cloud_size = 0.03
+shader_param/max_cloud_size = 1.0
+
+[sub_resource type="Shader" id=3]
+code = "shader_type spatial;
+render_mode unshaded;
+
+uniform sampler2D sky_gradient;
+
+uniform float diameter = 100;
+uniform float band_size = 0.1;
+uniform float interpolation_val = 0.0;
+
+float dist_from_sun(vec3 position){
+	float radius = diameter/2.0;
+	float dist = mix(interpolation_val-band_size/2.0,interpolation_val+band_size/2.0,1.0+position.z/radius);
+	return dist;
+}
+
+void fragment(){
+	vec4 world_frag_pos = CAMERA_MATRIX * vec4(VERTEX,1.0);
+	
+	float dist = dist_from_sun(world_frag_pos.xyz);
+	
+	vec3 sampled_color = texture(sky_gradient,vec2(dist,0)).rgb;
+	vec3 world_normal = NORMAL * mat3(INV_CAMERA_MATRIX);
+	
+	ALBEDO = sampled_color;
+	
+	if (world_normal.y < 0.0){
+		ALBEDO = sampled_color -vec3(0.04);
+	}
+}"
+
+[sub_resource type="Gradient" id=4]
+offsets = PoolRealArray( 0, 0.14, 0.28, 0.4, 0.49, 0.62, 0.75, 1 )
+colors = PoolColorArray( 0.670588, 0.721569, 0.741176, 1, 0.670588, 0.721569, 0.741176, 1, 0.972549, 0.901961, 0.619608, 1, 0.945098, 0.819608, 0.568627, 1, 0.741176, 0.235294, 0.192157, 1, 0.439216, 0.301961, 0.407843, 1, 0.227451, 0.258824, 0.431373, 1, 0.027451, 0.0431373, 0.196078, 1 )
+
+[sub_resource type="GradientTexture" id=5]
+gradient = SubResource( 4 )
+
+[sub_resource type="ShaderMaterial" id=6]
+shader = SubResource( 3 )
+shader_param/diameter = 100.0
+shader_param/band_size = 0.48
+shader_param/interpolation_val = 0.46
+shader_param/sky_gradient = SubResource( 5 )
+
+[sub_resource type="SphereMesh" id=7]
+material = SubResource( 6 )
+
+[node name="Particles" type="Particles"]
+amount = 250
+process_material = SubResource( 2 )
+draw_pass_1 = SubResource( 7 )
